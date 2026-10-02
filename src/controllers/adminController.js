@@ -2,8 +2,8 @@ const { pool } = require('../config/db');
 const { redis } = require('../config/redis');
 const stock = require('../services/stockService');
 const { orderQueue } = require('../queues/orderQueue');
-const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
-const asInt = (v, min = 1) => Number.isInteger(Number(v)) && Number(v) >= min;
+const wrap = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);const asInt = (v, min = 1) => Number.isInteger(Number(v)) && Number(v) >= min;
 
 exports.dashboard = wrap(async (req, res) => {
   const [orders, products, sales, confirmed, failed, queue, redisPing] = await Promise.all([

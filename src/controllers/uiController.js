@@ -4,7 +4,8 @@ const { pool } = require('../config/db');
 const stock = require('../services/stockService');
 const { orderQueue, enqueueOrder } = require('../queues/orderQueue');
 
-const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
+const wrap = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
 
 // Danh sách flash sale (từ DB, gọi ít)
 exports.listSales = wrap(async (req, res) => {
@@ -14,18 +15,109 @@ exports.listSales = wrap(async (req, res) => {
 
 // Tổng quan 1 sale: đọc 100% từ Redis nên client có thể poll mỗi 2s
 exports.overview = wrap(async (req, res) => {
-  const { saleId } = req.params;
-  const sale = await redis.hgetall(`fs:${saleId}:info`);
-  if (!sale.name) return res.status(404).json({ success: false, error: 'NOT_WARMED_UP' });
-  const ids = await redis.smembers(`fs:${saleId}:items`);
-  const items = await Promise.all(ids.map(async (pid) => {
-    const [remaining, m] = await Promise.all([stock.getRemainingStock(saleId, pid), redis.hgetall(`fs:${saleId}:meta:${pid}`)]);
-    return { productId: +pid, name: m.name, salePrice: +m.salePrice, limitPerUser: +m.limitPerUser, initialStock: +m.initialStock, remaining: remaining ?? 0 };
-  }));
-  items.sort((a, b) => a.productId - b.productId);
-  res.json({ success: true, sale, serverTime: Date.now(), items });
-});
+  const saleId = Number(req.params.saleId);
 
+  if (!Number.isInteger(saleId) || saleId <= 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'INVALID_SALE_ID',
+    });
+  }
+
+  // Đồng bộ lifecycle trước khi trả dữ liệu
+  await pool.query(
+    `
+    UPDATE flash_sales
+    SET status = CASE
+      WHEN now() < start_time THEN 'scheduled'
+      WHEN now() >= start_time AND now() < end_time THEN 'active'
+      WHEN now() >= end_time THEN 'ended'
+      ELSE status
+    END
+    WHERE id = $1
+    `,
+    [saleId]
+  );
+
+  const { rows: sales } = await pool.query(
+    `
+    SELECT
+      id,
+      name,
+      status,
+      start_time,
+      end_time
+    FROM flash_sales
+    WHERE id = $1
+    `,
+    [saleId]
+  );
+
+  if (sales.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: 'FLASH_SALE_NOT_FOUND',
+    });
+  }
+
+  const sale = sales[0];
+
+  const { rows: items } = await pool.query(
+    `
+    SELECT
+      fsi.product_id,
+      p.name,
+      fsi.sale_price,
+      fsi.limit_per_user,
+      fsi.stock AS initial_stock
+    FROM flash_sale_items fsi
+    JOIN products p
+      ON p.id = fsi.product_id
+    WHERE fsi.sale_id = $1
+    ORDER BY fsi.product_id
+    `,
+    [saleId]
+  );
+
+  const enrichedItems = await Promise.all(
+    items.map(async (item) => {
+      const remaining =
+        await stock.getRemainingStock(
+          saleId,
+          item.product_id
+        );
+
+      return {
+        productId: item.product_id,
+        name: item.name,
+        salePrice: Number(item.sale_price),
+        limitPerUser: item.limit_per_user,
+        initialStock: item.initial_stock,
+        remaining:
+          remaining === null
+            ? 0
+            : Number(remaining),
+      };
+    })
+  );
+
+  res.json({
+    success: true,
+    sale: {
+      id: sale.id,
+      name: sale.name,
+      status: sale.status,
+      startTime: new Date(
+        sale.start_time
+      ).getTime(),
+      endTime: new Date(
+        sale.end_time
+      ).getTime(),
+    },
+    serverTime: Date.now(),
+    items: enrichedItems,
+  });
+});
 // Thống kê admin: so kho Redis với DB + số đơn
 exports.stats = wrap(async (req, res) => {
   const { saleId } = req.params;
@@ -74,5 +166,5 @@ exports.reset = wrap(async (req, res) => {
     await c.query('COMMIT');
   } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
   await orderQueue.drain();
-  res.json({ success: true, itemsWarmedUp: await stock.warmupFlashSale(saleId) });
+  res.json({ success: true, itemsWarmedUp: await stock.warmupFlashSale( saleId,{ force: true }) });
 });

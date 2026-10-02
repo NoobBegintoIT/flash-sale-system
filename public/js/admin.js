@@ -1,12 +1,96 @@
-const $$ = (s) => [...document.querySelectorAll(s)];
+ $$ = (s) => [...document.querySelectorAll(s)];
+ function enforceAdminAccess() {
+  const token = getToken();
+  const user = getCurrentUser();
+
+  if (!token || !user) {
+    window.location.href = '/login.html';
+    return false;
+  }
+
+  if (user.role !== 'admin') {
+    alert('Bạn không có quyền truy cập trang quản trị.');
+    window.location.href = '/index.html';
+    return false;
+  }
+
+  return true;
+}
+
+if (!enforceAdminAccess()) {
+  throw new Error('ADMIN_ACCESS_REQUIRED');
+}
 let currentPage='dashboard', selectedSale='', productCache=[], saleCache=[];
 let statsRange='month';
 const money=n=>new Intl.NumberFormat('vi-VN',{style:'currency',currency:'VND',maximumFractionDigits:0}).format(Number(n)||0);
 const date=v=>v?new Date(v).toLocaleString('vi-VN'):'—';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function adminKey(){return localStorage.getItem('flash_admin_key')||'demo-admin-key';}
-function changeAdminKey(){localStorage.removeItem('flash_admin_key');location.reload();}
-async function adminApi(path,opt={},retried=false){const key=adminKey();const r=await fetch('/api'+path,{method:opt.method||'GET',headers:{'Content-Type':'application/json','x-admin-key':key},body:opt.body?JSON.stringify(opt.body):undefined});const data=await r.json().catch(()=>({}));if(r.status===401&&!retried){const entered=prompt('ADMIN_API_KEY chưa đúng. Nhập key trong file .env (mặc định: demo-admin-key):');if(entered){localStorage.setItem('flash_admin_key',entered);return adminApi(path,opt,true);}localStorage.removeItem('flash_admin_key');throw new Error('Chưa nhập ADMIN_API_KEY');}if(r.status===401){localStorage.removeItem('flash_admin_key');throw new Error('Khóa Admin không hợp lệ.');}if(!r.ok||data.success===false)throw new Error(data.message||data.error||`HTTP ${r.status}`);return data;}
+async function adminApi(path, opt = {}) {
+  const token = getToken();
+
+  if (!token) {
+    window.location.href = '/';
+    throw new Error('Chưa đăng nhập.');
+  }
+
+  const r = await fetch('/api' + path, {
+    method: opt.method || 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: opt.body
+      ? JSON.stringify(opt.body)
+      : undefined
+  });
+
+  const data = await r.json().catch(() => ({}));
+
+  if (r.status === 401) {
+    clearToken();
+    clearCurrentUser();
+
+    alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+    window.location.href = '/';
+
+    throw new Error('TOKEN_EXPIRED');
+  }
+
+  if (r.status === 403) {
+    throw new Error('Bạn không có quyền Admin.');
+  }
+
+  if (!r.ok || data.success === false) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      `HTTP ${r.status}`
+    );
+  }
+
+  return data;
+}
+function enforceAdminAccess() {
+  const token = getToken();
+  const user = getCurrentUser();
+
+  if (!token || !user) {
+    window.location.href = '/login.html';
+    return false;
+  }
+
+  if (user.role !== 'admin') {
+    alert('Bạn không có quyền truy cập trang quản trị.');
+    window.location.href = '/index.html';
+    return false;
+  }
+
+  return true;
+}
+
+if (!enforceAdminAccess()) {
+  throw new Error('ADMIN_ACCESS_REQUIRED');
+}
 function toast(msg,bad=false){const t=$('#toast');t.textContent=msg;t.className='toast show'+(bad?' bad':'');setTimeout(()=>t.className='toast',3500);}
 function empty(msg){return `<div class="empty-state"><span>⌁</span><b>${esc(msg)}</b></div>`;}
 function table(headers,rows){if(!rows.length)return empty('Chưa có dữ liệu');return `<table><thead><tr>${headers.map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;}
@@ -24,7 +108,7 @@ function showPage(page){
   if(page==='products') $('#products-table').innerHTML='<div class="empty-state"><b>Đang tải danh sách sản phẩm…</b></div>';
   loadPage(page).catch(e=>{
     console.error(`[admin:${page}]`,e);
-    const msg=`Không tải được dữ liệu: ${e.message}. Kiểm tra server/API, PostgreSQL và ADMIN_API_KEY.`;
+    const msg=`Không tải được dữ liệu: ${e.message}. Kiểm tra server/API, PostgreSQL và quyền Admin.`;
     const slot=page==='products'?'#products-table':page==='orders'?'#orders-table':page==='campaigns'?'#campaigns-table':null;
     if(slot) $(slot).innerHTML=`<div class="empty-state error-text"><b>${esc(msg)}</b><button class="btn btn-light" onclick="location.reload()">Tải lại trang</button></div>`;
     toast(msg,true);
@@ -65,7 +149,12 @@ async function orders(){const d=await adminApi('/admin/orders?limit=100&status='
 async function inventory(){const d=await adminApi('/flash-sales');const all=[];for(const s of d.sales){try{const x=await adminApi(`/admin/sales/${s.id}/stats`);x.items.forEach(i=>all.push({...i,sale_name:s.name,sale_id:s.id}));}catch{}}$('#inventory-table').innerHTML=table(['Chiến dịch','Sản phẩm','Tồn Redis','Tồn DB','Đã xác nhận','Đơn lỗi','Chênh lệch'],all.map(i=>{const redis=Number(i.redis_stock??0),db=Number(i.db_stock??0);return `<tr><td>${esc(i.sale_name)}</td><td>${esc(i.name)}</td><td>${redis}</td><td>${db}</td><td>${i.confirmed}</td><td>${i.failed}</td><td>${status(redis===db?'synced':'check '+(redis-db))}</td></tr>`;}));}
 async function queue(){const d=await adminApi('/admin/queue');$('#queue-metrics').innerHTML=metric('Waiting',d.counts.waiting||0,'Đang chờ','◷','orange')+metric('Active',d.counts.active||0,'Đang xử lý','↻','blue')+metric('Completed',d.counts.completed||0,'Hoàn tất','✓','green')+metric('Failed',d.counts.failed||0,'Cần kiểm tra','!','red');$('#failed-jobs').innerHTML=table(['Job ID','Tên job','Lần thử','Lý do lỗi','Thời điểm','Thao tác'],d.failed.map(j=>`<tr><td class="mono">${esc(j.id)}</td><td>${esc(j.name)}</td><td>${j.attemptsMade}</td><td class="error-text">${esc(j.failedReason||'—')}</td><td>${date(j.timestamp)}</td><td><button class="mini-btn" data-retry-job="${esc(j.id)}">Retry</button></td></tr>`));$$('[data-retry-job]').forEach(b=>b.onclick=async()=>{try{await adminApi('/admin/queue/'+encodeURIComponent(b.dataset.retryJob)+'/retry',{method:'POST'});toast('Đã đưa job trở lại queue');queue();}catch(e){toast(e.message,true);}});}
 async function health(){const d=await adminApi('/admin/health');$('#health-cards').innerHTML=metric('PostgreSQL',status(d.services.postgres),'Database','▤','green')+metric('Redis',status(d.services.redis),'Cache & Queue','▣','green')+metric('Redis memory',esc(d.redis.memory),'Bộ nhớ đang sử dụng','◫','purple')+metric('Uptime',Math.floor(d.uptime)+'s','Thời gian chạy process','◷','blue');$('#runtime-info').textContent=JSON.stringify({node:d.node,uptime_seconds:d.uptime,services:d.services,redis:d.redis},null,2);}
-document.addEventListener('click',e=>{const nav=e.target.closest('.nav-item[data-page]');if(nav){e.preventDefault();showPage(nav.dataset.page);return;}const go=e.target.closest('[data-goto]');if(go){e.preventDefault();showPage(go.dataset.goto);}});$('#refresh-all').onclick=()=>loadPage(currentPage).then(()=>toast('Đã làm mới dữ liệu')).catch(e=>toast(e.message,true));$('#change-key').onclick=changeAdminKey;$('#dismiss-notice').onclick=()=>$('.notice').remove();$('#modal-close').onclick=$('#modal-cancel').onclick=()=>$('#modal').classList.remove('open');$('#add-product').onclick=()=>productModal();$('#add-campaign').onclick=campaignModal;$('#product-search').oninput=()=>products().catch(e=>toast(e.message,true));$('#stats-range').onchange=e=>{statsRange=e.target.value;stats().catch(err=>toast(err.message,true));};$('#stats-refresh').onclick=()=>stats().catch(e=>toast(e.message,true));$('#order-filter').onchange=()=>orders().catch(e=>toast(e.message,true));$('#sale-select').onchange=e=>selectedSale=e.target.value;$('#warmup').onclick=async()=>{if(!selectedSale)return toast('Chọn chiến dịch trước',true);try{const d=await adminApi(`/flash-sales/${selectedSale}/warmup`,{method:'POST'});$('#operation-msg').textContent=`Đã nạp ${d.itemsWarmedUp} sản phẩm vào Redis`;toast('Warmup hoàn tất');inventory();}catch(e){toast(e.message,true);}};$('#reset').onclick=async()=>{if(!selectedSale||!confirm('Reset sẽ xóa đơn của chiến dịch và nạp lại kho. Tiếp tục?'))return;try{await adminApi(`/admin/sales/${selectedSale}/reset`,{method:'POST'});toast('Đã reset demo');loadPage(currentPage);}catch(e){toast(e.message,true);}};$('#inventory-refresh').onclick=()=>inventory().catch(e=>toast(e.message,true));$('#queue-refresh').onclick=()=>queue().catch(e=>toast(e.message,true));$('#health-refresh').onclick=()=>health().catch(e=>toast(e.message,true));
+document.addEventListener('click',e=>{const nav=e.target.closest('.nav-item[data-page]');if(nav){e.preventDefault();showPage(nav.dataset.page);return;}const go=e.target.closest('[data-goto]');if(go){e.preventDefault();showPage(go.dataset.goto);}});$('#logout-btn').onclick = () => {
+  clearToken();
+  clearCurrentUser();
+
+  window.location.href = '/login.html';
+};$('#refresh-all').onclick=()=>loadPage(currentPage).then(()=>toast('Đã làm mới dữ liệu')).catch(e=>toast(e.message,true));$('#dismiss-notice').onclick=()=>$('.notice').remove();$('#modal-close').onclick=$('#modal-cancel').onclick=()=>$('#modal').classList.remove('open');$('#add-product').onclick=()=>productModal();$('#add-campaign').onclick=campaignModal;$('#product-search').oninput=()=>products().catch(e=>toast(e.message,true));$('#stats-range').onchange=e=>{statsRange=e.target.value;stats().catch(err=>toast(err.message,true));};$('#stats-refresh').onclick=()=>stats().catch(e=>toast(e.message,true));$('#order-filter').onchange=()=>orders().catch(e=>toast(e.message,true));$('#sale-select').onchange=e=>selectedSale=e.target.value;$('#warmup').onclick=async()=>{if(!selectedSale)return toast('Chọn chiến dịch trước',true);try{const d=await adminApi(`/flash-sales/${selectedSale}/warmup`,{method:'POST'});$('#operation-msg').textContent=`Đã nạp ${d.itemsWarmedUp} sản phẩm vào Redis`;toast('Warmup hoàn tất');inventory();}catch(e){toast(e.message,true);}};$('#reset').onclick=async()=>{if(!selectedSale||!confirm('Reset sẽ xóa đơn của chiến dịch và nạp lại kho. Tiếp tục?'))return;try{await adminApi(`/admin/sales/${selectedSale}/reset`,{method:'POST'});toast('Đã reset demo');loadPage(currentPage);}catch(e){toast(e.message,true);}};$('#inventory-refresh').onclick=()=>inventory().catch(e=>toast(e.message,true));$('#queue-refresh').onclick=()=>queue().catch(e=>toast(e.message,true));$('#health-refresh').onclick=()=>health().catch(e=>toast(e.message,true));
 // Tự làm mới dữ liệu đang xem mỗi 5 giây để đơn mua từ trang cửa hàng
 // xuất hiện ở Admin mà không cần tải lại trang. Tránh gọi API khi tab ẩn.
 let refreshBusy = false;

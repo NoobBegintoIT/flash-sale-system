@@ -1,6 +1,9 @@
 require('dotenv').config();
 const app = require('./app');
 const { startOrderWorker } = require('./queues/orderWorker');
+const {
+  startFlashSaleLifecycle,
+} = require('./services/flashSaleLifecycle');
 
 const PORT = process.env.PORT || 3000;
 
@@ -13,3 +16,5 @@ app.listen(PORT, () => {
 // scale API và scale worker độc lập nhau.
 startOrderWorker({ concurrency: 10 });
 console.log('[server] Order worker đã khởi động (concurrency=10)');
+startFlashSaleLifecycle();
+console.log('[server] Flash Sale lifecycle worker đã khởi động.');

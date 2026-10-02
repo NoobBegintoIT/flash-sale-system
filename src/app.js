@@ -7,6 +7,7 @@ const morgan = require('morgan');
 const { globalLimiter } = require('./middleware/rateLimiter');
 const { errorHandler } = require('./middleware/errorHandler');
 const flashSaleRoutes = require('./routes/flashSaleRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use(globalLimiter);
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
 app.use('/api', flashSaleRoutes);
+app.use('/api/auth', authRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, error: 'NOT_FOUND' }));
 app.use(errorHandler);
