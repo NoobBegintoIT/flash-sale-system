@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Flash Sale • Admin Console</title><link rel="stylesheet" href="/css/style.css"></head>
+<body class="admin-body">
+<div class="admin-shell">
+  <aside class="sidebar"><a class="brand" href="/admin.html"><span class="brand-mark">⚡</span><span>FLASH<span class="brand-muted">SALE</span><small>ADMIN CONSOLE</small></span></a>
+    <div class="side-label">WORKSPACE</div>
+    <button class="nav-item active" data-page="dashboard"><span>▦</span> Tổng quan</button>
+    <button class="nav-item" data-page="products"><span>▣</span> Sản phẩm</button>
+    <button class="nav-item" data-page="campaigns"><span>◷</span> Chiến dịch</button>
+    <button class="nav-item" data-page="orders"><span>☷</span> Đơn hàng</button>
+    <button class="nav-item" data-page="stats"><span>▥</span> Thống kê</button>
+    <div class="side-label">VẬN HÀNH</div>
+    <button class="nav-item" data-page="inventory"><span>▤</span> Kho & Redis</button>
+    <button class="nav-item" data-page="queue"><span>⇄</span> Queue & Worker</button>
+    <button class="nav-item" data-page="system"><span>◉</span> Sức khỏe hệ thống</button>
+    <div class="sidebar-bottom"><a href="/" class="back-shop">↗ Xem cửa hàng</a><div class="profile"><div class="avatar">AD</div><div><b>Administrator</b><small>Demo environment</small></div><span class="online-dot"></span></div></div>
+  </aside>
+  <main class="admin-main"><header class="topbar"><div><div class="breadcrumb">Workspace / <b id="crumb">Tổng quan</b></div><h1 id="page-title">Tổng quan hệ thống</h1></div><div class="top-actions"><span class="live-pill"><i></i> Live monitor</span><button class="btn btn-light" id="logout-btn">
+  ↪ Đăng xuất
+</button><button class="btn btn-light" id="refresh-all">↻ Làm mới</button></div></header>
+  <div class="admin-content"><div class="notice"><span>ℹ</span><div><b>Chế độ đồ án / Demo</b><p>Dashboard dùng dữ liệu từ PostgreSQL và trạng thái dịch vụ thực tế. Khóa Admin được cấu hình qua JWT <code>admin</code>.</p></div><button id="dismiss-notice" aria-label="Đóng">×</button></div>
+    <section class="page-panel active" id="page-dashboard"><div class="metric-grid" id="metrics"><div class="metric-card skeleton">Đang tải thống kê…</div></div><div class="two-col"><div class="panel"><div class="panel-head"><div><h2>Trạng thái xử lý đơn</h2><p>Queue snapshot · thời gian thực</p></div><span class="tag tag-blue">BullMQ</span></div><div id="queue-summary" class="queue-summary"></div></div><div class="panel"><div class="panel-head"><div><h2>Dịch vụ hệ thống</h2><p>Kết nối các thành phần backend</p></div><button class="icon-btn" data-goto="system">↗</button></div><div id="service-summary" class="service-list"></div></div></div><div class="panel"><div class="panel-head"><div><h2>Hoạt động gần đây</h2><p>Đơn hàng mới nhất</p></div><button class="text-btn" data-goto="orders">Xem tất cả →</button></div><div id="recent-orders" class="table-wrap"></div></div></section>
+    <section class="page-panel" id="page-products"><div class="toolbar"><div><h2>Danh sách sản phẩm</h2><p>Quản lý catalog và giá bán</p></div><div class="toolbar-actions"><input id="product-search" placeholder="Tìm sản phẩm…"><button class="btn btn-primary" id="add-product">＋ Thêm sản phẩm</button></div></div><div class="panel"><div id="products-table" class="table-wrap"></div></div></section>
+    <section class="page-panel" id="page-campaigns"><div class="toolbar"><div><h2>Chiến dịch Flash Sale</h2><p>Lịch mở bán và cấu hình sản phẩm trong chiến dịch</p></div><button class="btn btn-primary" id="add-campaign">＋ Tạo chiến dịch</button></div><div class="panel"><div id="campaigns-table" class="table-wrap"></div></div><div class="panel"><div class="panel-head"><div><h2>Thao tác vận hành</h2><p>Nạp dữ liệu chiến dịch vào Redis hoặc reset dữ liệu demo</p></div></div><div class="operation-row"><select id="sale-select" aria-label="Chọn chiến dịch"></select><button class="btn btn-primary" id="warmup">↥ Warmup Redis</button><button class="btn btn-danger" id="reset">Reset demo</button><span id="operation-msg" class="inline-msg"></span></div></div></section>
+    <section class="page-panel" id="page-orders"><div class="toolbar"><div><h2>Đơn hàng</h2><p>Theo dõi vòng đời xử lý đơn</p></div><select id="order-filter"><option value="">Tất cả trạng thái</option><option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select></div><div class="panel"><div id="orders-table" class="table-wrap"></div></div></section>
+    <section class="page-panel" id="page-inventory"><div class="toolbar"><div><h2>Kho hàng & Redis</h2><p>Đối chiếu tồn kho cache với dữ liệu PostgreSQL</p></div><button class="btn btn-light" id="inventory-refresh">↻ Đối chiếu</button></div><div class="panel"><div id="inventory-table" class="table-wrap"></div></div><div class="callout">Redis được dùng làm lớp giữ chỗ tồn kho tốc độ cao. PostgreSQL là nguồn dữ liệu lâu dài; hãy kiểm tra chênh lệch trước khi đồng bộ hoặc reset.</div></section>
+    <section class="page-panel" id="page-queue"><div class="toolbar"><div><h2>Queue & Worker Monitor</h2><p>Quan sát các job chờ, đang chạy, hoàn tất và lỗi</p></div><button class="btn btn-light" id="queue-refresh">↻ Làm mới</button></div><div id="queue-metrics" class="metric-grid"></div><div class="panel"><div class="panel-head"><div><h2>Job thất bại gần đây</h2><p>Thông tin phục vụ điều tra lỗi và retry thủ công</p></div></div><div id="failed-jobs" class="table-wrap"></div></div></section>
+
+<section class="page-panel" id="page-stats">
+  <div class="toolbar">
+    <div><h2>Thống kê & báo cáo</h2><p>Doanh thu và đơn hàng theo ngày, tháng hoặc năm</p></div>
+    <div class="toolbar-actions">
+      <select id="stats-range">
+        <option value="day">Hôm nay</option>
+        <option value="month" selected>Tháng này</option>
+        <option value="year">Năm nay</option>
+      </select>
+      <button class="btn btn-light" id="stats-refresh">↻ Cập nhật</button>
+    </div>
+  </div>
+  <div id="stats-metrics" class="metric-grid"></div>
+  <div class="panel">
+    <div class="panel-head"><div><h2>Doanh thu theo thời gian</h2><p id="stats-caption">Đang tải…</p></div></div>
+    <div id="stats-chart" class="stats-chart"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><div><h2>Chi tiết theo mốc thời gian</h2><p>Confirmed / Failed / Doanh thu</p></div></div>
+    <div id="stats-table" class="table-wrap"></div>
+  </div>
+</section>
+
+    <section class="page-panel" id="page-system"><div class="toolbar"><div><h2>Sức khỏe hệ thống</h2><p>Thông tin runtime và kết nối dịch vụ</p></div><button class="btn btn-light" id="health-refresh">↻ Kiểm tra</button></div><div id="health-cards" class="metric-grid"></div><div class="panel"><div class="panel-head"><div><h2>Thông tin runtime</h2><p>Node.js / Redis / PostgreSQL</p></div></div><pre id="runtime-info" class="runtime-info"></pre></div></section>
+  </div></main>
+</div>
+<div class="modal-backdrop" id="modal"><div class="modal"><div class="modal-head"><h2 id="modal-title">Thêm mới</h2><button class="icon-btn" id="modal-close">×</button></div><form id="modal-form"><div id="modal-fields" class="form-grid"></div><div class="modal-actions"><button type="button" class="btn btn-light" id="modal-cancel">Hủy</button><button class="btn btn-primary" type="submit">Lưu dữ liệu</button></div></form></div></div>
+<div class="toast" id="toast"></div><script src="/js/common.js"></script><script src="/js/admin.js"></script></body></html>
