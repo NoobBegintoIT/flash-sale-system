@@ -1,31 +1,39 @@
 const { pool } = require('../config/db');
 
+const INTERVAL_MS = Number(
+  process.env.FLASH_SALE_LIFECYCLE_INTERVAL_MS || 5000
+);
+
 let timer = null;
+let syncInProgress = false;
 
 async function syncFlashSaleStatuses() {
+  // Tránh để các truy vấn lifecycle chạy chồng lên nhau.
+  if (syncInProgress) {
+    return;
+  }
+
+  syncInProgress = true;
+
   try {
-    const { rowCount } = await pool.query(
-      `
+    const { rowCount } = await pool.query(`
       UPDATE flash_sales
       SET status = CASE
         WHEN now() < start_time THEN 'scheduled'
-        WHEN now() >= start_time
-             AND now() < end_time THEN 'active'
-        WHEN now() >= end_time THEN 'ended'
-        ELSE status
+        WHEN now() < end_time THEN 'active'
+        ELSE 'ended'
       END
-      WHERE
-        (status = 'scheduled'
-          AND now() >= start_time)
-        OR
-        (status = 'active'
-          AND now() >= end_time)
-      `
-    );
+      WHERE status IN ('scheduled', 'active', 'ended')
+        AND status IS DISTINCT FROM CASE
+          WHEN now() < start_time THEN 'scheduled'
+          WHEN now() < end_time THEN 'active'
+          ELSE 'ended'
+        END
+    `);
 
     if (rowCount > 0) {
       console.log(
-        `[Lifecycle] Đã cập nhật ${rowCount} Flash Sale.`
+        `[Lifecycle] Đã đồng bộ trạng thái ${rowCount} Flash Sale.`
       );
     }
   } catch (err) {
@@ -33,6 +41,8 @@ async function syncFlashSaleStatuses() {
       '[Lifecycle] Sync failed:',
       err.message
     );
+  } finally {
+    syncInProgress = false;
   }
 }
 
@@ -41,18 +51,16 @@ function startFlashSaleLifecycle() {
     return;
   }
 
-  // chạy ngay một lần
-  syncFlashSaleStatuses();
-
-  // sau đó mỗi 1 giây
-  timer = setInterval(
-    syncFlashSaleStatuses,
-    1000
-  );
-
   console.log(
-    '[Lifecycle] Flash Sale lifecycle worker started.'
+    `[Lifecycle] Worker started; interval=${INTERVAL_MS}ms`
   );
+
+  // Đồng bộ ngay khi khởi động.
+  void syncFlashSaleStatuses();
+
+  timer = setInterval(() => {
+    void syncFlashSaleStatuses();
+  }, INTERVAL_MS);
 }
 
 function stopFlashSaleLifecycle() {
